@@ -25,6 +25,8 @@ export interface AnalyzerResult {
     rsi: number | null;
     sma20: number | null;
     sma50: number | null;
+    ema12: number | null;
+    ema26: number | null;
     macd: number | null;
     macdSignal: number | null;
     macdHist: number | null;
