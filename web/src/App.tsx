@@ -2,7 +2,7 @@ import React from "react";
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { connectStream, fetchHistory, searchSymbols } from "./api";
-import { checkAlerts, recordEquity, useAccount } from "./store";
+import { addToList, checkAlerts, processPendingOrders, recordEquity, useAccount, useWatchlists } from "./store";
 import { useSession } from "./session";
 import { useHashRoute, type Route } from "./router";
 import type { AnalyzerResult, Candle, Quote } from "./types";
@@ -14,9 +14,10 @@ import { Markets } from "./pages/Markets";
 import { Portfolio } from "./pages/Portfolio";
 import { Tools } from "./pages/Tools";
 import { SettingsPage, loadSettings, type Settings } from "./pages/Settings";
+import { ToastHost } from "./components/ToastHost";
+import { ShortcutsModal } from "./components/ShortcutsModal";
 import type { ChartType, Overlays } from "./components/CandleChart";
 
-const DEFAULT_WATCHLIST = ["AAPL", "MSFT", "NVDA", "TSLA", "AMZN"];
 const NAV: { route: Route; icon: string; label: string }[] = [
   { route: "dashboard", icon: "▦", label: "Dashboard" },
   { route: "markets", icon: "📈", label: "Markets" },
@@ -30,7 +31,6 @@ export default function App() {
   const [route, go] = useHashRoute();
 
   // market state (shared across pages)
-  const [watchlist, setWatchlist] = useState<string[]>(DEFAULT_WATCHLIST);
   const [selected, setSelected] = useState<string>("AAPL");
   const [quotes, setQuotes] = useState<Record<string, Quote>>({});
   const [analysis, setAnalysis] = useState<AnalyzerResult | null>(null);
@@ -44,10 +44,14 @@ export default function App() {
     () => (localStorage.getItem("sa.theme") as "dark" | "light") ?? "dark"
   );
   const [navOpen, setNavOpen] = useState(false);
+  const [showShortcuts, setShowShortcuts] = useState(false);
+  const { active: activeList } = useWatchlists();
+  const quotesRef = useRef<Record<string, Quote>>({});
 
   const selectedRef = useRef(selected);
   selectedRef.current = selected;
   const account = useAccount();
+  const watchlist = activeList.symbols;
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -75,8 +79,10 @@ export default function App() {
   useEffect(() => {
     if (!session) return;
     const close = connectStream(watchlist, ({ quote, analysis: a }) => {
+      quotesRef.current = { ...quotesRef.current, [quote.symbol]: quote };
       setQuotes((prev) => ({ ...prev, [quote.symbol]: quote }));
       checkAlerts(quote);
+      processPendingOrders(quotesRef.current);
       if (quote.symbol === selectedRef.current) {
         setAnalysis(a);
         setCandles((prev) => {
@@ -110,13 +116,9 @@ export default function App() {
 
   const addSymbol = useCallback(async (hit: { symbol: string }) => {
     const sym = hit.symbol.toUpperCase();
-    setWatchlist((prev) => (prev.includes(sym) ? prev : [...prev, sym]));
+    addToList(activeList.id, sym);
     setSelected(sym);
-  }, []);
-
-  const removeSymbol = useCallback((sym: string) => {
-    setWatchlist((prev) => prev.filter((s) => s !== sym));
-  }, []);
+  }, [activeList.id]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -193,12 +195,11 @@ export default function App() {
                 overlays={overlays}
                 setOverlays={setOverlays}
                 onSelect={setSelected}
-                onRemove={removeSymbol}
-                onAdd={addSymbol}
               />
             )}
             {route === "portfolio" && <Portfolio quotes={quotes} />}
             {route === "tools" && <Tools watchlist={watchlist} quotes={quotes} onSelect={goMarkets} />}
+            {showShortcuts && <ShortcutsModal onClose={() => setShowShortcuts(false)} />}
             {route === "settings" && (
               <SettingsPage settings={settings} setSettings={setSettings} theme={theme} setTheme={setTheme} />
             )}
@@ -210,6 +211,7 @@ export default function App() {
           </footer>
         </div>
       </div>
+      <ToastHost />
     </div>
   );
 }

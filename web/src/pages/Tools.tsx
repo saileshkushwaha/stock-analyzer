@@ -2,6 +2,7 @@ import React, { useMemo, useState } from "react";
 import { Screener } from "../components/Screener";
 import { Heatmap } from "../components/Heatmap";
 import type { Quote } from "../types";
+import { Backtest } from "../components/Backtest";
 
 export function Tools({
   watchlist,
@@ -12,7 +13,7 @@ export function Tools({
   quotes: Record<string, Quote>;
   onSelect: (s: string) => void;
 }) {
-  const [tab, setTab] = useState<"screener" | "heatmap" | "calc">("screener");
+  const [tab, setTab] = useState<"screener" | "heatmap" | "calc" | "backtest">("screener");
 
   return (
     <div className="page">
@@ -21,10 +22,11 @@ export function Tools({
         <p className="muted">Screening, market breadth and trade calculators.</p>
       </header>
 
-      <div className="tab-row" style={{ maxWidth: 420 }}>
+      <div className="tab-row" style={{ maxWidth: 560 }}>
         <button className={tab === "screener" ? "active" : ""} onClick={() => setTab("screener")}>Screener</button>
         <button className={tab === "heatmap" ? "active" : ""} onClick={() => setTab("heatmap")}>Heatmap</button>
         <button className={tab === "calc" ? "active" : ""} onClick={() => setTab("calc")}>Calculators</button>
+        <button className={tab === "backtest" ? "active" : ""} onClick={() => setTab("backtest")}>Backtest</button>
       </div>
 
       {tab === "screener" && <Screener symbols={watchlist} />}
@@ -34,6 +36,7 @@ export function Tools({
         </div>
       )}
       {tab === "calc" && <Calculators price={quotes[watchlist[0]]?.price ?? 100} />}
+      {tab === "backtest" && <Backtest />}
     </div>
   );
 }

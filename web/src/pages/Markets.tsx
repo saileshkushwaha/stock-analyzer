@@ -28,8 +28,6 @@ export interface MarketProps {
   overlays: Overlays;
   setOverlays: (o: Overlays) => void;
   onSelect: (s: string) => void;
-  onRemove: (s: string) => void;
-  onAdd: (hit: { symbol: string }) => void;
 }
 
 export function Markets(p: MarketProps) {
@@ -55,7 +53,7 @@ export function Markets(p: MarketProps) {
             <button className={leftTab === "heatmap" ? "active" : ""} onClick={() => setLeftTab("heatmap")}>Heatmap</button>
           </div>
           {leftTab === "list" ? (
-            <WatchList watchlist={p.watchlist} quotes={p.quotes} selected={p.selected} onSelect={p.onSelect} onRemove={p.onRemove} />
+            <WatchList quotes={p.quotes} selected={p.selected} onSelect={p.onSelect} />
           ) : (
             <Heatmap quotes={p.quotes} onSelect={p.onSelect} />
           )}
