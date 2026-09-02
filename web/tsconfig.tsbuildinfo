@@ -1,1 +1,0 @@
-{"root":["./src/App.tsx","./src/api.ts","./src/main.tsx","./src/types.ts","./src/components/AnalyzerPanel.tsx","./src/components/SearchBox.tsx","./src/components/StockChart.tsx","./src/components/TickerTape.tsx","./src/components/WatchList.tsx"],"version":"5.9.3"}
