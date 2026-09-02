@@ -1,0 +1,14 @@
+{
+  "name": "stock-analyzer",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Realtime stock market analyzer - React 17 + TypeScript + Node streaming engine",
+  "workspaces": ["server", "web"],
+  "scripts": {
+    "dev": "bun --cwd server dev & bun --cwd web dev",
+    "dev:server": "bun --cwd server dev",
+    "dev:web": "bun --cwd web dev",
+    "build": "bun --cwd web build",
+    "start": "bun --cwd server start"
+  }
+}
