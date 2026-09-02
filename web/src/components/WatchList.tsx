@@ -1,5 +1,4 @@
-import React from "react";
-
+import React, { useState } from "react";
 import type { Quote } from "../types";
 
 export function WatchList({
@@ -15,11 +14,26 @@ export function WatchList({
   onSelect: (sym: string) => void;
   onRemove: (sym: string) => void;
 }) {
+  const [sortBy, setSortBy] = useState<"custom" | "change">("custom");
+
+  const items = sortBy === "change"
+    ? [...watchlist].sort((a, b) => (quotes[b]?.changePercent ?? 0) - (quotes[a]?.changePercent ?? 0))
+    : watchlist;
+
   return (
     <aside className="watchlist card">
-      <h2>Watchlist</h2>
+      <div className="wl-head">
+        <h2>Watchlist</h2>
+        <button
+          className="link-btn small"
+          onClick={() => setSortBy(sortBy === "custom" ? "change" : "custom")}
+          title="Toggle sort"
+        >
+          {sortBy === "custom" ? "⇅ sort" : "⇅ %chg"}
+        </button>
+      </div>
       <ul>
-        {watchlist.map((sym) => {
+        {items.map((sym) => {
           const q = quotes[sym];
           const up = (q?.changePercent ?? 0) >= 0;
           return (

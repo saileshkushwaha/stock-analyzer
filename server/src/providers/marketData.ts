@@ -159,3 +159,51 @@ export function simulateHistory(symbol: string, points = 150): Candle[] {
   s.last = out[out.length - 1].c;
   return out;
 }
+
+// ---------- news ----------
+
+export interface NewsItem {
+  title: string;
+  publisher: string;
+  link: string;
+  ts: number;
+  relatedSymbols: string[];
+}
+
+const DEMO_HEADLINES = [
+  ["{S} rallies as volume surges past 20-day average", "MarketWire"],
+  ["Analysts lift {S} price target on stronger guidance", "Bloomberg"],
+  ["{S} options activity hints at hedging into earnings", "Reuters"],
+  ["Institutional flows rotate into {S} sector ETFs", "CNBC"],
+  ["{S} short interest falls to three-month low", "Barron's"],
+  ["Technical breakout: {S} clears key resistance level", "Investing.com"],
+  ["{S} named top pick in sector outlook note", "Morningstar"],
+  ["Macro tailwinds return; {S} among top gainers", "Financial Times"],
+];
+
+export async function getNews(symbol?: string): Promise<NewsItem[]> {
+  try {
+    const q = symbol ? `${symbol} stock` : "stock market";
+    const json = (await yfGet(
+      `/v1/finance/search?q=${encodeURIComponent(q)}&quotesCount=0&newsCount=10`
+    )) as any;
+    const items: NewsItem[] = (json?.news ?? []).map((n: any) => ({
+      title: n.title ?? "",
+      publisher: n.publisher ?? "",
+      link: n.link ?? "",
+      ts: (n.providerPublishTime ?? 0) * 1000,
+      relatedSymbols: (n.relatedTickers ?? []).slice(0, 3),
+    }));
+    if (items.length) return items;
+    throw new Error("no news");
+  } catch {
+    const s = symbol ? symbol.toUpperCase() : "SPY";
+    return DEMO_HEADLINES.slice(0, 6).map(([tpl, pub], i) => ({
+      title: tpl.replace("{S}", s),
+      publisher: pub,
+      link: "#",
+      ts: Date.now() - i * 45 * 60_000,
+      relatedSymbols: [s],
+    }));
+  }
+}

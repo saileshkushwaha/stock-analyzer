@@ -3,7 +3,7 @@ import cors from "cors";
 import { WebSocketServer, type WebSocket } from "ws";
 import type { IncomingMessage } from "http";
 import { StockAnalyzer } from "./analyzer/StockAnalyzer.js";
-import { getHistory, getQuote, searchSymbols } from "./providers/marketData.js";
+import { getHistory, getNews, getQuote, searchSymbols } from "./providers/marketData.js";
 import type { Candle, Quote } from "./types.js";
 
 const PORT = process.env.PORT ?? 4000;
@@ -58,6 +58,41 @@ app.get("/api/analyze/:symbol", async (req, res) => {
   const result = analyzer.analyze(symbol, candles);
   if (!result) return res.status(422).json({ error: "not enough data" });
   res.json(result);
+});
+
+app.get("/api/news", async (req, res) => {
+  const symbol = req.query.symbol ? String(req.query.symbol).toUpperCase() : undefined;
+  res.json({ news: await getNews(symbol) });
+});
+
+/** Batch scan: analyze many symbols at once for the screener. */
+app.post("/api/screener", async (req, res) => {
+  const symbols: string[] = (req.body?.symbols ?? [])
+    .map((s: unknown) => String(s).toUpperCase())
+    .filter(Boolean)
+    .slice(0, 25);
+  const rows = await Promise.all(
+    symbols.map(async (symbol) => {
+      const candles = history.get(symbol) ?? (await getHistory(symbol, "1mo", "1d"));
+      history.set(symbol, candles);
+      const a = analyzer.analyze(symbol, candles);
+      const quote = latestQuotes.get(symbol) ?? (await getQuote(symbol));
+      latestQuotes.set(symbol, quote);
+      return {
+        symbol,
+        name: quote.name,
+        price: quote.price,
+        changePercent: quote.changePercent,
+        score: a?.score ?? 0,
+        signal: a?.signal ?? "HOLD",
+        rsi: a?.indicators.rsi ?? null,
+        momentum5: a?.indicators.momentum5 ?? null,
+        volatilityPct: a?.indicators.volatilityPct ?? null,
+        source: quote.source,
+      };
+    })
+  );
+  res.json({ rows });
 });
 
 // ---------- WebSocket streaming ----------

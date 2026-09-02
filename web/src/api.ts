@@ -1,4 +1,4 @@
-import type { AnalyzerResult, Quote, SearchHit } from "./types";
+import type { AnalyzerResult, Candle, NewsItem, Quote, ScreenerRow, SearchHit } from "./types";
 import { simulateHistory, simulateQuote } from "./demo";
 import { StockAnalyzer } from "./analyzer/StockAnalyzer";
 
@@ -33,13 +33,57 @@ export async function searchSymbols(q: string): Promise<SearchHit[]> {
   return d.quotes ?? [];
 }
 
-export async function fetchHistory(symbol: string): Promise<{ t: number; c: number }[]> {
+export async function fetchHistory(symbol: string, range = "1d", interval = "5m"): Promise<Candle[]> {
   if (await isDemo()) {
-    return simulateHistory(symbol).map((c) => ({ t: c.t, c: c.c }));
+    return simulateHistory(symbol);
   }
-  const r = await fetch(`/api/history?symbol=${encodeURIComponent(symbol)}&range=1d&interval=5m`);
+  const r = await fetch(`/api/history?symbol=${encodeURIComponent(symbol)}&range=${range}&interval=${interval}`);
   const d = await r.json();
-  return (d.candles ?? []).map((c: any) => ({ t: c.t, c: c.c }));
+  return (d.candles ?? []).map((c: any) => ({ t: c.t, o: c.o, h: c.h, l: c.l, c: c.c, v: c.v }));
+}
+
+export async function fetchNews(symbol?: string): Promise<NewsItem[]> {
+  if (await isDemo()) {
+    const s = (symbol ?? "SPY").toUpperCase();
+    return [
+      { title: `${s} rallies as volume surges past 20-day average`, publisher: "MarketWire", link: "#", ts: Date.now() - 30 * 60_000, relatedSymbols: [s] },
+      { title: `Analysts lift ${s} price target on stronger guidance`, publisher: "Bloomberg", link: "#", ts: Date.now() - 2 * 3600_000, relatedSymbols: [s] },
+      { title: `${s} options activity hints at hedging into earnings`, publisher: "Reuters", link: "#", ts: Date.now() - 5 * 3600_000, relatedSymbols: [s] },
+    ];
+  }
+  const r = await fetch(`/api/news${symbol ? `?symbol=${encodeURIComponent(symbol)}` : ""}`);
+  const d = await r.json();
+  return d.news ?? [];
+}
+
+export async function runScreener(symbols: string[]): Promise<ScreenerRow[]> {
+  if (await isDemo()) {
+    const analyzer = new StockAnalyzer();
+    return symbols.map((sym) => {
+      const candles = simulateHistory(sym, 60);
+      const a = analyzer.analyze(sym, candles);
+      const q = simulateQuote(sym);
+      return {
+        symbol: sym,
+        name: q.name,
+        price: q.price,
+        changePercent: q.changePercent,
+        score: a?.score ?? 0,
+        signal: a?.signal ?? "HOLD",
+        rsi: a?.indicators.rsi ?? null,
+        momentum5: a?.indicators.momentum5 ?? null,
+        volatilityPct: a?.indicators.volatilityPct ?? null,
+        source: "simulated",
+      };
+    });
+  }
+  const r = await fetch("/api/screener", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ symbols }),
+  });
+  const d = await r.json();
+  return d.rows ?? [];
 }
 
 export type TickHandler = (data: { quote: Quote; analysis: AnalyzerResult | null }) => void;

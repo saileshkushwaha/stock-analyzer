@@ -45,3 +45,28 @@ export interface SearchHit {
   exchange: string;
   type: string;
 }
+
+export interface Candle {
+  t: number; o: number; h: number; l: number; c: number; v: number;
+}
+
+export interface NewsItem {
+  title: string;
+  publisher: string;
+  link: string;
+  ts: number;
+  relatedSymbols: string[];
+}
+
+export interface ScreenerRow {
+  symbol: string;
+  name?: string;
+  price: number;
+  changePercent: number;
+  score: number;
+  signal: string;
+  rsi: number | null;
+  momentum5: number | null;
+  volatilityPct: number | null;
+  source?: string;
+}

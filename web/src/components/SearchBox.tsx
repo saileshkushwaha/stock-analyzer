@@ -36,6 +36,7 @@ export function SearchBox({
   return (
     <div className="search" ref={boxRef}>
       <input
+        id="sym-search"
         value={q}
         onChange={(e) => setQ(e.target.value)}
         onFocus={() => hits.length && setOpen(true)}
