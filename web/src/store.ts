@@ -193,3 +193,30 @@ export function useAlerts(): PriceAlert[] {
   }, []);
   return alerts;
 }
+
+// ---------- account reset + equity curve ----------
+
+export function resetAccount() {
+  account = { cash: STARTING_CASH, realizedPnl: 0, positions: [], orders: [] };
+  save(ACCOUNT_KEY, account);
+  equityCurve = [];
+  save(EQUITY_KEY, equityCurve);
+  emit(accountSubs);
+}
+
+const EQUITY_KEY = "sa.equity.v1";
+let equityCurve: { t: number; v: number }[] = load(EQUITY_KEY, []);
+let lastEquityWrite = 0;
+
+/** Track account equity over time (throttled to one point per 10s, capped at 720). */
+export function recordEquity(value: number) {
+  const now = Date.now();
+  if (now - lastEquityWrite < 10_000) return;
+  lastEquityWrite = now;
+  equityCurve = [...equityCurve, { t: now, v: Number(value.toFixed(2)) }].slice(-720);
+  save(EQUITY_KEY, equityCurve);
+}
+
+export function getEquityCurve(): { t: number; v: number }[] {
+  return equityCurve;
+}

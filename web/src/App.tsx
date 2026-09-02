@@ -2,44 +2,48 @@ import React from "react";
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { connectStream, fetchHistory, searchSymbols } from "./api";
-import { checkAlerts, useAccount } from "./store";
+import { checkAlerts, recordEquity, useAccount } from "./store";
+import { useSession } from "./session";
+import { useHashRoute, type Route } from "./router";
 import type { AnalyzerResult, Candle, Quote } from "./types";
 import { TickerTape } from "./components/TickerTape";
 import { SearchBox } from "./components/SearchBox";
-import { WatchList } from "./components/WatchList";
-import { CandleChart, TIMEFRAMES, type ChartType, type Overlays } from "./components/CandleChart";
-import { AnalyzerPanel } from "./components/AnalyzerPanel";
-import { OrderTicket } from "./components/OrderTicket";
-import { Positions } from "./components/Positions";
-import { AlertsPanel } from "./components/AlertsPanel";
-import { DepthPanel } from "./components/DepthPanel";
-import { NewsFeed } from "./components/NewsFeed";
-import { Screener } from "./components/Screener";
-import { Heatmap } from "./components/Heatmap";
+import { Login } from "./pages/Login";
+import { Dashboard } from "./pages/Dashboard";
+import { Markets } from "./pages/Markets";
+import { Portfolio } from "./pages/Portfolio";
+import { Tools } from "./pages/Tools";
+import { SettingsPage, loadSettings, type Settings } from "./pages/Settings";
+import type { ChartType, Overlays } from "./components/CandleChart";
 
 const DEFAULT_WATCHLIST = ["AAPL", "MSFT", "NVDA", "TSLA", "AMZN"];
-type RailTab = "trade" | "alerts" | "depth" | "news";
-type CenterTab = "analyzer" | "screener";
-type LeftTab = "list" | "heatmap";
+const NAV: { route: Route; icon: string; label: string }[] = [
+  { route: "dashboard", icon: "▦", label: "Dashboard" },
+  { route: "markets", icon: "📈", label: "Markets" },
+  { route: "portfolio", icon: "▤", label: "Portfolio" },
+  { route: "tools", icon: "🛠", label: "Tools" },
+  { route: "settings", icon: "⚙", label: "Settings" },
+];
 
 export default function App() {
+  const session = useSession();
+  const [route, go] = useHashRoute();
+
+  // market state (shared across pages)
   const [watchlist, setWatchlist] = useState<string[]>(DEFAULT_WATCHLIST);
   const [selected, setSelected] = useState<string>("AAPL");
   const [quotes, setQuotes] = useState<Record<string, Quote>>({});
   const [analysis, setAnalysis] = useState<AnalyzerResult | null>(null);
   const [candles, setCandles] = useState<Candle[]>([]);
   const [connected, setConnected] = useState(false);
-
+  const [settings, setSettingsState] = useState<Settings>(() => loadSettings());
   const [tfIndex, setTfIndex] = useState(0);
-  const [chartType, setChartType] = useState<ChartType>("candles");
-  const [overlays, setOverlays] = useState<Overlays>({ sma: true, bb: false, volume: true, rsi: false, macd: false });
-
+  const [chartType, setChartType] = useState<ChartType>(settings.defaultChart);
+  const [overlays, setOverlays] = useState<Overlays>(settings.defaultOverlays);
   const [theme, setTheme] = useState<"dark" | "light">(
     () => (localStorage.getItem("sa.theme") as "dark" | "light") ?? "dark"
   );
-  const [railTab, setRailTab] = useState<RailTab>("trade");
-  const [centerTab, setCenterTab] = useState<CenterTab>("analyzer");
-  const [leftTab, setLeftTab] = useState<LeftTab>("list");
+  const [navOpen, setNavOpen] = useState(false);
 
   const selectedRef = useRef(selected);
   selectedRef.current = selected;
@@ -50,18 +54,26 @@ export default function App() {
     localStorage.setItem("sa.theme", theme);
   }, [theme]);
 
-  // Load candles whenever symbol or timeframe changes
+  const setSettings = useCallback((s: Settings) => {
+    setSettingsState(s);
+    setChartType(s.defaultChart);
+    setOverlays(s.defaultOverlays);
+  }, []);
+
+  // candles per symbol+timeframe
   useEffect(() => {
+    if (!session) return;
     let alive = true;
     setCandles([]);
     setAnalysis(null);
-    const tf = TIMEFRAMES[tfIndex];
-    fetchHistory(selected, tf.range, tf.interval).then((s) => alive && setCandles(s));
+    const tf = ["1d:5m", "5d:15m", "1mo:1h", "6mo:1d", "1y:1wk"][tfIndex].split(":");
+    fetchHistory(selected, tf[0], tf[1]).then((s) => alive && setCandles(s));
     return () => { alive = false; };
-  }, [selected, tfIndex]);
+  }, [selected, tfIndex, session]);
 
-  // Live stream
+  // live stream
   useEffect(() => {
+    if (!session) return;
     const close = connectStream(watchlist, ({ quote, analysis: a }) => {
       setQuotes((prev) => ({ ...prev, [quote.symbol]: quote }));
       checkAlerts(quote);
@@ -86,7 +98,15 @@ export default function App() {
     });
     const t = setTimeout(() => setConnected(true), 800);
     return () => { close(); clearTimeout(t); };
-  }, [watchlist]);
+  }, [watchlist, session]);
+
+  // record equity for the dashboard curve
+  useEffect(() => {
+    const marketValue = account.positions.reduce(
+      (s, p) => s + p.qty * (quotes[p.symbol]?.price ?? p.avgPrice), 0
+    );
+    recordEquity(account.cash + marketValue);
+  }, [quotes, account]);
 
   const addSymbol = useCallback(async (hit: { symbol: string }) => {
     const sym = hit.symbol.toUpperCase();
@@ -98,7 +118,6 @@ export default function App() {
     setWatchlist((prev) => prev.filter((s) => s !== sym));
   }, []);
 
-  // keyboard: "/" focuses search
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "/" && (e.target as HTMLElement)?.tagName !== "INPUT") {
@@ -110,124 +129,87 @@ export default function App() {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  const quote = quotes[selected];
-  const up = (quote?.change ?? 0) >= 0;
-  const equity =
-    account.cash +
-    account.positions.reduce((s, p) => s + p.qty * (quotes[p.symbol]?.price ?? p.avgPrice), 0);
+  if (!session) return <Login />;
 
-  const toggleOverlay = (k: keyof Overlays) => setOverlays((o) => ({ ...o, [k]: !o[k] }));
+  const goMarkets = (sym?: string) => { if (sym) setSelected(sym); go("markets"); };
+  const displayName = settings.displayName || session.name;
 
   return (
-    <div className="app">
+    <div className={`shell ${navOpen ? "nav-open" : ""}`}>
       <TickerTape quotes={Object.values(quotes)} />
 
-      <header className="header">
-        <div className="brand">
-          <span className="brand-mark">▲</span>
-          <span className="brand-name">Stock Analyzer</span>
-          <span className={`conn ${connected ? "on" : "off"}`}>
-            {connected ? "● live" : "○ connecting"}
-          </span>
-        </div>
-        <SearchBox onPick={addSymbol} search={searchSymbols} />
-        <div className="header-right">
-          <span className="equity-chip" title="Paper account equity">
-            ${equity.toLocaleString(undefined, { maximumFractionDigits: 0 })}
-          </span>
-          <button className="theme-btn" onClick={() => setTheme(theme === "dark" ? "light" : "dark")}>
-            {theme === "dark" ? "☀" : "☾"}
-          </button>
-        </div>
-      </header>
-
-      <main className="layout">
-        <aside className="left-col">
-          <div className="tab-row">
-            <button className={leftTab === "list" ? "active" : ""} onClick={() => setLeftTab("list")}>List</button>
-            <button className={leftTab === "heatmap" ? "active" : ""} onClick={() => setLeftTab("heatmap")}>Heatmap</button>
+      <div className="shell-body">
+        <nav className="sidebar">
+          <div className="side-brand">
+            <span className="brand-mark">▲</span>
+            <span>Stock Analyzer</span>
           </div>
-          {leftTab === "list" ? (
-            <WatchList watchlist={watchlist} quotes={quotes} selected={selected} onSelect={setSelected} onRemove={removeSymbol} />
-          ) : (
-            <Heatmap quotes={quotes} onSelect={setSelected} />
-          )}
-        </aside>
-
-        <section className="center-col">
-          <div className="chart-card card">
-            <div className="chart-head">
-              <div className="chart-title">
-                <h1>{selected}</h1>
-                {quote && (
-                  <>
-                    <span className={`price ${up ? "up" : "down"}`}>{quote.price.toFixed(2)}</span>
-                    <span className={`chip ${up ? "up" : "down"}`}>
-                      {up ? "▲" : "▼"} {quote.changePercent.toFixed(2)}%
-                    </span>
-                    {quote.source === "simulated" && <span className="chip sim">demo</span>}
-                  </>
-                )}
-              </div>
-              <div className="toolbar">
-                <div className="seg">
-                  {TIMEFRAMES.map((tf, i) => (
-                    <button key={tf.label} className={tfIndex === i ? "active" : ""} onClick={() => setTfIndex(i)}>
-                      {tf.label}
-                    </button>
-                  ))}
-                </div>
-                <div className="seg">
-                  <button className={chartType === "candles" ? "active" : ""} onClick={() => setChartType("candles")}>🕯</button>
-                  <button className={chartType === "line" ? "active" : ""} onClick={() => setChartType("line")}>📈</button>
-                </div>
-                <div className="seg">
-                  {(["sma", "bb", "volume", "rsi", "macd"] as const).map((k) => (
-                    <button key={k} className={overlays[k] ? "active" : ""} onClick={() => toggleOverlay(k)}>
-                      {k.toUpperCase()}
-                    </button>
-                  ))}
-                </div>
-              </div>
+          <ul>
+            {NAV.map((n) => (
+              <li key={n.route}>
+                <button
+                  className={route === n.route ? "active" : ""}
+                  onClick={() => { go(n.route); setNavOpen(false); }}
+                >
+                  <span className="nav-ico">{n.icon}</span> {n.label}
+                </button>
+              </li>
+            ))}
+          </ul>
+          <div className="side-user">
+            <div className="avatar">{displayName.slice(0, 1).toUpperCase()}</div>
+            <div>
+              <b>{displayName}</b>
+              <span className="muted small">{session.email}</span>
             </div>
-
-            <CandleChart candles={candles} chartType={chartType} overlays={overlays} up={up} symbol={selected} />
           </div>
+        </nav>
 
-          <div className="tab-row center-tabs">
-            <button className={centerTab === "analyzer" ? "active" : ""} onClick={() => setCenterTab("analyzer")}>Analyzer</button>
-            <button className={centerTab === "screener" ? "active" : ""} onClick={() => setCenterTab("screener")}>Screener</button>
-          </div>
-          {centerTab === "analyzer" ? (
-            <AnalyzerPanel analysis={analysis} />
-          ) : (
-            <Screener symbols={watchlist} />
-          )}
-        </section>
+        <div className="main-area">
+          <header className="topbar">
+            <button className="burger" onClick={() => setNavOpen(!navOpen)}>☰</button>
+            <SearchBox onPick={(h) => { addSymbol(h); go("markets"); }} search={searchSymbols} />
+            <div className="header-right">
+              <span className={`conn ${connected ? "on" : "off"}`}>{connected ? "● live" : "○ connecting"}</span>
+              <button className="theme-btn" onClick={() => setTheme(theme === "dark" ? "light" : "dark")}>
+                {theme === "dark" ? "☀" : "☾"}
+              </button>
+            </div>
+          </header>
 
-        <aside className="rail">
-          <div className="tab-row">
-            <button className={railTab === "trade" ? "active" : ""} onClick={() => setRailTab("trade")}>Trade</button>
-            <button className={railTab === "alerts" ? "active" : ""} onClick={() => setRailTab("alerts")}>Alerts</button>
-            <button className={railTab === "depth" ? "active" : ""} onClick={() => setRailTab("depth")}>DOM</button>
-            <button className={railTab === "news" ? "active" : ""} onClick={() => setRailTab("news")}>News</button>
-          </div>
-          {railTab === "trade" && (
-            <>
-              <OrderTicket quote={quote ?? null} />
-              <Positions quotes={quotes} />
-            </>
-          )}
-          {railTab === "alerts" && <AlertsPanel quote={quote ?? null} />}
-          {railTab === "depth" && <DepthPanel quote={quote ?? null} />}
-          {railTab === "news" && <NewsFeed symbol={selected} />}
-        </aside>
-      </main>
+          <main className="content">
+            {route === "dashboard" && <Dashboard quotes={quotes} watchlist={watchlist} onGo={goMarkets} />}
+            {route === "markets" && (
+              < Markets
+                watchlist={watchlist}
+                quotes={quotes}
+                selected={selected}
+                candles={candles}
+                analysis={analysis}
+                tfIndex={tfIndex}
+                setTfIndex={setTfIndex}
+                chartType={chartType}
+                setChartType={setChartType}
+                overlays={overlays}
+                setOverlays={setOverlays}
+                onSelect={setSelected}
+                onRemove={removeSymbol}
+                onAdd={addSymbol}
+              />
+            )}
+            {route === "portfolio" && <Portfolio quotes={quotes} />}
+            {route === "tools" && <Tools watchlist={watchlist} quotes={quotes} onSelect={goMarkets} />}
+            {route === "settings" && (
+              <SettingsPage settings={settings} setSettings={setSettings} theme={theme} setTheme={setTheme} />
+            )}
+          </main>
 
-      <footer className="footer muted">
-        Paper trading · {quote?.source === "simulated" ? "demo feed" : "Yahoo Finance live"} · analyzer
-        signals are informational, not investment advice.
-      </footer>
+          <footer className="footer muted">
+            Paper trading · {Object.values(quotes)[0]?.source === "simulated" ? "demo feed" : "Yahoo Finance live"} ·
+            analyzer signals are informational, not investment advice.
+          </footer>
+        </div>
+      </div>
     </div>
   );
 }
